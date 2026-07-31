@@ -3,8 +3,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 
 # Embedding model
-EMBED_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-EMBED_DIM = 768  # Correct embedding dimension
+EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_DIM = 384  # Correct embedding dimension
 
 # Text splitter
 splitter = RecursiveCharacterTextSplitter(

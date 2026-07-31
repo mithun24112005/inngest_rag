@@ -15,7 +15,8 @@ st.set_page_config(page_title="RAG Ingest PDF", page_icon="📄", layout="center
 
 @st.cache_resource
 def get_inngest_client() -> inngest.Inngest:
-    return inngest.Inngest(app_id="rag_app", is_production=False)
+    is_prod = bool(os.getenv("INNGEST_EVENT_KEY"))
+    return inngest.Inngest(app_id="rag_app", is_production=is_prod)
 
 
 def save_uploaded_pdf(file) -> Path:
@@ -86,7 +87,8 @@ def fetch_runs(event_id: str) -> list[dict]:
         if not data:
             return []
         return data.get("data") or []
-    except Exception:
+    except Exception as e:
+        print(f"Error fetching runs: {e}")
         return []
 
 

@@ -18,7 +18,7 @@ llm=init_chat_model("groq:openai/gpt-oss-120b")
 inngest_client = inngest.Inngest(
     app_id="rag_app",
     logger=logging.getLogger("uvicorn"),
-    is_production=False,
+    is_production=bool(os.getenv("INNGEST_EVENT_KEY")),
     serializer=inngest.PydanticSerializer()
 )
 

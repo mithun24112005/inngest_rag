@@ -23,6 +23,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Pre-download the Hugging Face model during the build phase so it doesn't timeout the server startup
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+
 EXPOSE 8000
 
 # Run the FastAPI application using the PORT environment variable provided by Render

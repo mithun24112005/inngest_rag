@@ -12,8 +12,16 @@ splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=200
 )
 
-# Load embedding model
-model = SentenceTransformer(EMBED_MODEL)
+# Lazily loaded — model is only initialized on first use, NOT at import time.
+# This prevents uvicorn from blocking its port binding during startup.
+_model: SentenceTransformer | None = None
+
+
+def _get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(EMBED_MODEL)
+    return _model
 
 
 def load_and_chunk_pdf(path: str) -> list[str]:
@@ -44,10 +52,10 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     Generate embeddings for a list of text chunks.
     """
-    embeddings = model.encode(
+    embeddings = _get_model().encode(
         texts,
         convert_to_numpy=True,
-        show_progress_bar=True
+        show_progress_bar=False
     )
 
     return embeddings.tolist()

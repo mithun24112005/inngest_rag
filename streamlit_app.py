@@ -78,10 +78,19 @@ def _inngest_api_base() -> str:
     return os.getenv("INNGEST_API_BASE", "http://127.0.0.1:8288/v1")
 
 
+def _inngest_headers() -> dict:
+    # Inngest Cloud REST API requires the signing key as a Bearer token.
+    # Locally (dev server) no auth is needed, so we return empty headers.
+    signing_key = os.getenv("INNGEST_SIGNING_KEY", "")
+    if signing_key:
+        return {"Authorization": f"Bearer {signing_key}"}
+    return {}
+
+
 def fetch_runs(event_id: str) -> list[dict]:
     url = f"{_inngest_api_base()}/events/{event_id}/runs"
     try:
-        resp = requests.get(url)
+        resp = requests.get(url, headers=_inngest_headers())
         resp.raise_for_status()
         data = resp.json()
         if not data:
@@ -95,7 +104,7 @@ def fetch_runs(event_id: str) -> list[dict]:
 def fetch_run_details(run_id: str) -> dict:
     url = f"{_inngest_api_base()}/runs/{run_id}"
     try:
-        resp = requests.get(url)
+        resp = requests.get(url, headers=_inngest_headers())
         resp.raise_for_status()
         data = resp.json()
         if not data:

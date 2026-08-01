@@ -6,14 +6,21 @@ from dotenv import load_dotenv
 import os
 import uuid
 import datetime
-from data_loader import load_and_chunk_pdf, load_and_chunk_docx, embed_texts
-from vector_db import QdrantStorage
 from custom_types import RAGChunkAndSrc, RAGUpsertResult, RAGSearchResult, RAQQueryResult
-from langchain.chat_models import init_chat_model
 
 load_dotenv()
 
-llm=init_chat_model("groq:openai/gpt-oss-120b")
+# --- Lazy-loaded LLM: only initialized on first query, not at import time ---
+_llm = None
+
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        from langchain.chat_models import init_chat_model
+        _llm = init_chat_model("groq:openai/gpt-oss-120b")
+    return _llm
+
 
 inngest_client = inngest.Inngest(
     app_id="rag_app",
@@ -36,12 +43,15 @@ inngest_client = inngest.Inngest(
 )
 async def rag_ingest_pdf(ctx: inngest.Context):
     def _load(ctx: inngest.Context) -> RAGChunkAndSrc:
+        from data_loader import load_and_chunk_pdf
         pdf_path = ctx.event.data["pdf_path"]
         source_id = ctx.event.data.get("source_id", pdf_path)
         chunks = load_and_chunk_pdf(pdf_path)
         return RAGChunkAndSrc(chunks=chunks, source_id=source_id)
 
     def _upsert(chunks_and_src: RAGChunkAndSrc) -> RAGUpsertResult:
+        from data_loader import embed_texts
+        from vector_db import QdrantStorage
         chunks = chunks_and_src.chunks
         source_id = chunks_and_src.source_id
         vecs = embed_texts(chunks)
@@ -61,6 +71,8 @@ async def rag_ingest_pdf(ctx: inngest.Context):
 )
 async def rag_query_pdf_ai(ctx: inngest.Context):
     def _search(question: str, top_k: int = 5) -> RAGSearchResult:
+        from data_loader import embed_texts
+        from vector_db import QdrantStorage
         query_vec = embed_texts([question])[0]
         store = QdrantStorage()
         found = store.search(query_vec, top_k)
@@ -80,6 +92,7 @@ async def rag_query_pdf_ai(ctx: inngest.Context):
     )
 
     async def _ask_llm():
+        llm = _get_llm()
         messages = [
             ("system", "You answer questions using only the provided context."),
             ("user", user_content)
@@ -93,6 +106,12 @@ async def rag_query_pdf_ai(ctx: inngest.Context):
 
 
 app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 
 inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf_ai])
 

@@ -1,6 +1,4 @@
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 
 # Embedding model
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -13,13 +11,15 @@ splitter = RecursiveCharacterTextSplitter(
 )
 
 # Lazily loaded — model is only initialized on first use, NOT at import time.
-# This prevents uvicorn from blocking its port binding during startup.
-_model: SentenceTransformer | None = None
+# We also lazy-import sentence_transformers because it pulls in PyTorch (~200MB),
+# which takes 2-3 minutes to import on Render's free tier CPU and causes port timeout.
+_model = None
 
 
-def _get_model() -> SentenceTransformer:
+def _get_model():
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(EMBED_MODEL)
     return _model
 
@@ -28,6 +28,7 @@ def load_and_chunk_pdf(path: str) -> list[str]:
     """
     Load a PDF and split it into chunks.
     """
+    from langchain_community.document_loaders import PyPDFLoader
     loader = PyPDFLoader(path)
     documents = loader.load()
 
@@ -40,6 +41,7 @@ def load_and_chunk_docx(path: str) -> list[str]:
     """
     Load a DOCX file and split it into chunks.
     """
+    from langchain_community.document_loaders import Docx2txtLoader
     loader = Docx2txtLoader(path)
     documents = loader.load()
 

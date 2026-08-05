@@ -115,30 +115,46 @@ def fetch_run_details(run_id: str) -> dict:
         resp = requests.get(url, headers=_inngest_headers())
         resp.raise_for_status()
         data = resp.json()
+        print(f"[DEBUG] run details raw response: {data}")
         if not data:
             return {}
-        return data.get("data") or {}
-    except Exception:
+        return data.get("data") or data
+    except Exception as e:
+        print(f"[DEBUG] fetch_run_details error: {e}")
         return {}
 
 
 def wait_for_run_output(event_id: str, timeout_s: float = 120.0, poll_interval_s: float = 0.5) -> dict:
     start = time.time()
     last_status = None
+    last_run = {}
     while True:
         runs = fetch_runs(event_id)
         if runs:
             run = runs[0]
+            last_run = run
             status = run.get("status")
             last_status = status or last_status
+            print(f"[DEBUG] run status={status}, keys={list(run.keys())}")
             if status in ("Completed", "Succeeded", "Success", "Finished"):
-                run_id = run.get("run_id")
+                # Inngest Cloud uses 'id' not 'run_id' in the runs list
+                run_id = run.get("run_id") or run.get("id")
+                print(f"[DEBUG] fetching run details for run_id={run_id}")
                 details = fetch_run_details(run_id)
-                return details.get("output") or {}
+                print(f"[DEBUG] run details keys={list(details.keys())}")
+                # Try multiple paths where output might live
+                output = (
+                    details.get("output")
+                    or details.get("data", {}).get("output")
+                    or run.get("output")
+                    or {}
+                )
+                print(f"[DEBUG] extracted output={output}")
+                return output
             if status in ("Failed", "Cancelled"):
                 raise RuntimeError(f"Function run {status}")
         if time.time() - start > timeout_s:
-            raise TimeoutError(f"Timed out waiting for run output (last status: {last_status})")
+            raise TimeoutError(f"Timed out waiting for run output (last status: {last_status}). Run keys: {list(last_run.keys())}")
         time.sleep(poll_interval_s)
 
 
@@ -162,3 +178,6 @@ with st.form("rag_query_form"):
             st.caption("Sources")
             for s in sources:
                 st.write(f"- {s}")
+        if not answer:
+            with st.expander("🔍 Debug: raw output"):
+                st.json(output)

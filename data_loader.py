@@ -1,8 +1,12 @@
+import os
+from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Embedding model
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBED_DIM = 384  # Correct embedding dimension
+load_dotenv()
+
+# Embedding model (served via HF Inference API — no local download needed)
+EMBED_MODEL = "BAAI/bge-m3"
+EMBED_DIM = 1024
 
 # Text splitter
 splitter = RecursiveCharacterTextSplitter(
@@ -10,18 +14,20 @@ splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=200
 )
 
-# Lazily loaded — model is only initialized on first use, NOT at import time.
-# We also lazy-import sentence_transformers because it pulls in PyTorch (~200MB),
-# which takes 2-3 minutes to import on Render's free tier CPU and causes port timeout.
-_model = None
+# Lazily loaded HF Inference Client
+_hf_client = None
 
 
-def _get_model():
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(EMBED_MODEL)
-    return _model
+def _get_hf_client():
+    global _hf_client
+    if _hf_client is None:
+        from huggingface_hub import InferenceClient
+        hf_token = os.getenv("HF_TOKEN")
+        _hf_client = InferenceClient(
+            provider="hf-inference",
+            api_key=hf_token,
+        )
+    return _hf_client
 
 
 def load_and_chunk_pdf(path: str) -> list[str]:
@@ -52,12 +58,14 @@ def load_and_chunk_docx(path: str) -> list[str]:
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """
-    Generate embeddings for a list of text chunks.
+    Generate embeddings via the HF Inference API (cloud-based, no local model).
     """
-    embeddings = _get_model().encode(
-        texts,
-        convert_to_numpy=True,
-        show_progress_bar=False
-    )
-
-    return embeddings.tolist()
+    client = _get_hf_client()
+    all_embeddings = []
+    for text in texts:
+        embedding = client.feature_extraction(
+            text,
+            model=EMBED_MODEL,
+        )
+        all_embeddings.append(embedding)
+    return all_embeddings

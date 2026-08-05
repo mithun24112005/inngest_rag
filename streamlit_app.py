@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 import time
 
 import streamlit as st
@@ -19,23 +18,32 @@ def get_inngest_client() -> inngest.Inngest:
     return inngest.Inngest(app_id="rag_app", is_production=is_prod)
 
 
-def save_uploaded_pdf(file) -> Path:
-    uploads_dir = Path("uploads")
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    file_path = uploads_dir / file.name
-    file_bytes = file.getbuffer()
-    file_path.write_bytes(file_bytes)
-    return file_path
+def _backend_url() -> str:
+    """Base URL of the FastAPI backend (Render in production, localhost in dev)."""
+    return os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 
-async def send_rag_ingest_event(pdf_path: Path) -> None:
+def upload_pdf_to_backend(file) -> dict:
+    """
+    Uploads the PDF to the FastAPI backend's /upload endpoint.
+    Returns {"pdf_path": "...", "source_id": "..."} with server-side paths.
+    """
+    resp = requests.post(
+        f"{_backend_url()}/upload",
+        files={"file": (file.name, file.getvalue(), "application/pdf")},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def send_rag_ingest_event(pdf_path: str, source_id: str) -> None:
     client = get_inngest_client()
     await client.send(
         inngest.Event(
             name="rag/ingest_pdf",
             data={
-                "pdf_path": str(pdf_path.resolve()),
-                "source_id": pdf_path.name,
+                "pdf_path": pdf_path,
+                "source_id": source_id,
             },
         )
     )
@@ -46,12 +54,12 @@ uploaded = st.file_uploader("Choose a PDF", type=["pdf"], accept_multiple_files=
 
 if uploaded is not None:
     with st.spinner("Uploading and triggering ingestion..."):
-        path = save_uploaded_pdf(uploaded)
-        # Kick off the event and block until the send completes
-        asyncio.run(send_rag_ingest_event(path))
-        # Small pause for user feedback continuity
+        # Step 1: Upload PDF to the Render backend
+        result = upload_pdf_to_backend(uploaded)
+        # Step 2: Trigger Inngest event with the backend's server-side path
+        asyncio.run(send_rag_ingest_event(result["pdf_path"], result["source_id"]))
         time.sleep(0.3)
-    st.success(f"Triggered ingestion for: {path.name}")
+    st.success(f"Triggered ingestion for: {result['source_id']}")
     st.caption("You can upload another PDF if you like.")
 
 st.divider()

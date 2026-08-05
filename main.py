@@ -1,5 +1,6 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
+from pathlib import Path
 import inngest
 import inngest.fast_api
 from dotenv import load_dotenv
@@ -44,9 +45,16 @@ inngest_client = inngest.Inngest(
 async def rag_ingest_pdf(ctx: inngest.Context):
     def _load(ctx: inngest.Context) -> RAGChunkAndSrc:
         from data_loader import load_and_chunk_pdf
+        import os
         pdf_path = ctx.event.data["pdf_path"]
         source_id = ctx.event.data.get("source_id", pdf_path)
         chunks = load_and_chunk_pdf(pdf_path)
+        # Delete the file immediately after chunking — all data is now in memory
+        # and will be stored in Qdrant Cloud. No need to keep it on disk.
+        try:
+            os.remove(pdf_path)
+        except OSError:
+            pass
         return RAGChunkAndSrc(chunks=chunks, source_id=source_id)
 
     def _upsert(chunks_and_src: RAGChunkAndSrc) -> RAGUpsertResult:
@@ -111,6 +119,21 @@ app = FastAPI()
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/upload")
+async def upload_pdf(file: UploadFile = File(...)):
+    """
+    Receives a PDF from the Streamlit frontend and saves it
+    to the Render backend's local filesystem.
+    Returns the server-side path so Inngest can use it for ingestion.
+    """
+    uploads_dir = Path("/app/uploads")
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    file_path = uploads_dir / file.filename
+    content = await file.read()
+    file_path.write_bytes(content)
+    return {"pdf_path": str(file_path), "source_id": file.filename}
 
 
 inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf_ai])
